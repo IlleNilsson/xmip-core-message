@@ -7,6 +7,6 @@ repository = "https://github.com/IlleNilsson/xmip-message"
 description = "Immutable Xmip Message model."
 
 [dependencies]
-xmip-core = { git = "https://github.com/IlleNilsson/xmip-core", rev = "83f68c482f42a22866902ff7d78e7a3b1d14dcdf" }
+xmip-core = { git = "https://github.com/IlleNilsson/xmip-core", rev = "9adfd1eb4a6a3b5a6b0b6ea9b3a1fb288b41c8fc" }
 xmip-stream = { git = "https://github.com/IlleNilsson/xmip-stream", rev = "3855d6b37988f0ff5962a27662824d5da20cce70" }
 xmip-context = { git = "https://github.com/IlleNilsson/xmip-context", rev = "a6220c984c4ec4edffbcc45d578a9a98d0b2242a" }
