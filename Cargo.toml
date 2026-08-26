@@ -2,14 +2,18 @@
 [workspace]
 
 [package]
-name = "xmip-message"
+name = "xmip-core-message"
 version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/IlleNilsson/xmip-message"
+repository = "https://github.com/IlleNilsson/xmip-core-message"
 description = "Immutable Xmip Message model."
 
 [dependencies]
-xmip-core = { git = "https://github.com/IlleNilsson/xmip-core", rev = "9adfd1eb4a6a3b5a6b0b6ea9b3a1fb288b41c8fc" }
-xmip-stream = { git = "https://github.com/IlleNilsson/xmip-stream", rev = "3855d6b37988f0ff5962a27662824d5da20cce70" }
-xmip-context = { git = "https://github.com/IlleNilsson/xmip-context", rev = "a6220c984c4ec4edffbcc45d578a9a98d0b2242a" }
+# Only the treatment types are serialised. An artifact declares priority,
+# execution profile and durability in configuration, so those have to survive a
+# round trip through TOML. Sections hold Streams and never leave the process.
+serde = { version = "1", features = ["derive"] }
+xmip-core = { git = "https://github.com/IlleNilsson/xmip-core", branch = "main" }
+xmip-stream = { package = "xmip-core-stream", git = "https://github.com/IlleNilsson/xmip-core-stream", branch = "main" }
+xmip-context = { package = "xmip-core-context", git = "https://github.com/IlleNilsson/xmip-core-context", branch = "main" }
