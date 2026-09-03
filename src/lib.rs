@@ -244,10 +244,8 @@ mod tests {
         let first = received();
         let assigned = first.assigned(
             MessageId::new(2),
-            MessageContext::new().with_value(
-                "order.id",
-                xmip_context::ContextValue::Text("A-1".into()),
-            ),
+            MessageContext::new()
+                .with_value("order.id", xmip_context::ContextValue::Text("A-1".into())),
         );
 
         assert_eq!(assigned.generation(), 1);
