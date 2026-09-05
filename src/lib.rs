@@ -20,11 +20,11 @@
 //!   mutable Stream were possible; nothing in Xmip permits one. Sections carry
 //!   the Stream directly.
 
+use context::MessageContext;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use xmip_context::MessageContext;
-use xmip_core::{MessageId, SectionId};
-use xmip_stream::Stream;
+use stream::Stream;
+use xcore::{MessageId, SectionId};
 
 /// What produced this Message.
 ///
@@ -219,7 +219,7 @@ impl Message {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use xmip_core::StreamId;
+    use xcore::StreamId;
 
     fn section(stream_id: u128, bytes: &[u8]) -> MessageSection {
         MessageSection {
@@ -244,8 +244,7 @@ mod tests {
         let first = received();
         let assigned = first.assigned(
             MessageId::new(2),
-            MessageContext::new()
-                .with_value("order.id", xmip_context::ContextValue::Text("A-1".into())),
+            MessageContext::new().with_value("order.id", context::ContextValue::Text("A-1".into())),
         );
 
         assert_eq!(assigned.generation(), 1);

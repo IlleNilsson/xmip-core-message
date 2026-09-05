@@ -14,6 +14,6 @@ description = "Immutable Xmip Message model."
 # execution profile and durability in configuration, so those have to survive a
 # round trip through TOML. Sections hold Streams and never leave the process.
 serde = { version = "1", features = ["derive"] }
-xmip-core = { git = "https://github.com/IlleNilsson/xmip-core", branch = "main" }
-xmip-stream = { package = "xmip-core-stream", git = "https://github.com/IlleNilsson/xmip-core-stream", branch = "main" }
-xmip-context = { package = "xmip-core-context", git = "https://github.com/IlleNilsson/xmip-core-context", branch = "main" }
+xcore = { package = "xmip-core", git = "https://github.com/IlleNilsson/xmip-core", branch = "main" }
+stream = { package = "xmip-core-stream", git = "https://github.com/IlleNilsson/xmip-core-stream", branch = "main" }
+context = { package = "xmip-core-context", git = "https://github.com/IlleNilsson/xmip-core-context", branch = "main" }
