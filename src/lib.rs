@@ -20,6 +20,10 @@
 //!   mutable Stream were possible; nothing in Xmip permits one. Sections carry
 //!   the Stream directly.
 
+mod shape;
+
+pub use shape::{Part, Shape, ShapeError, Shaped, choose, media_type_of};
+
 use context::MessageContext;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
