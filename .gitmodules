@@ -1,0 +1,45 @@
+[submodule "xmip-core-message-json"]
+	path = json
+	url = https://github.com/IlleNilsson/xmip-core-message-json.git
+[submodule "xmip-core-message-xml"]
+	path = xml
+	url = https://github.com/IlleNilsson/xmip-core-message-xml.git
+[submodule "xmip-core-message-avro"]
+	path = avro
+	url = https://github.com/IlleNilsson/xmip-core-message-avro.git
+[submodule "xmip-core-message-binary"]
+	path = binary
+	url = https://github.com/IlleNilsson/xmip-core-message-binary.git
+[submodule "xmip-core-message-csv"]
+	path = csv
+	url = https://github.com/IlleNilsson/xmip-core-message-csv.git
+[submodule "xmip-core-message-edi-edifact"]
+	path = edi-edifact
+	url = https://github.com/IlleNilsson/xmip-core-message-edi-edifact.git
+[submodule "xmip-core-message-edi-tradacoms"]
+	path = edi-tradacoms
+	url = https://github.com/IlleNilsson/xmip-core-message-edi-tradacoms.git
+[submodule "xmip-core-message-edi-x12"]
+	path = edi-x12
+	url = https://github.com/IlleNilsson/xmip-core-message-edi-x12.git
+[submodule "xmip-core-message-fixed-width"]
+	path = fixed-width
+	url = https://github.com/IlleNilsson/xmip-core-message-fixed-width.git
+[submodule "xmip-core-message-form-urlencoded"]
+	path = form-urlencoded
+	url = https://github.com/IlleNilsson/xmip-core-message-form-urlencoded.git
+[submodule "xmip-core-message-hl7-er7"]
+	path = hl7-er7
+	url = https://github.com/IlleNilsson/xmip-core-message-hl7-er7.git
+[submodule "xmip-core-message-multipart"]
+	path = multipart
+	url = https://github.com/IlleNilsson/xmip-core-message-multipart.git
+[submodule "xmip-core-message-protobuf"]
+	path = protobuf
+	url = https://github.com/IlleNilsson/xmip-core-message-protobuf.git
+[submodule "xmip-core-message-text"]
+	path = text
+	url = https://github.com/IlleNilsson/xmip-core-message-text.git
+[submodule "xmip-core-message-ubl"]
+	path = ubl
+	url = https://github.com/IlleNilsson/xmip-core-message-ubl.git
