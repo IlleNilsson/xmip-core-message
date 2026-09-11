@@ -20,6 +20,8 @@
 //!   mutable Stream were possible; nothing in Xmip permits one. Sections carry
 //!   the Stream directly.
 
+pub mod record;
+pub mod segment;
 mod shape;
 
 pub use shape::{Part, Shape, ShapeError, Shaped, choose, media_type_of};
