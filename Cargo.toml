@@ -9,6 +9,10 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/IlleNilsson/xmip-core-message"
 description = "Immutable Xmip Message model."
 
+[lib]
+# A host crate: the technologies mount beside this source (ADR-0049).
+path = ".src/lib.rs"
+
 [dependencies]
 # Only the treatment types are serialised. An artifact declares priority,
 # execution profile and durability in configuration, so those have to survive a
