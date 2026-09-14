@@ -12,9 +12,11 @@
 //! segments is skipped, because interchanges are written one segment per
 //! line as often as not; a terminator that is itself a line break is honoured
 //! before that. Elements are handed back raw — releases in place, components
-//! unsplit — because a shape sections and a contract reads.
+//! unsplit — because a shape sections and a contract reads. Where the walk
+//! cannot continue it stops with the reason and the byte, as every walk in
+//! this crate does.
 
-use crate::{Part, ShapeError};
+use crate::{Part, Stop};
 
 /// The characters that cut an interchange into segments and elements.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,21 +155,6 @@ impl<'a> Segment<'a> {
     }
 }
 
-/// Why the walk stopped, and the byte it stopped at.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Stop {
-    pub reason: &'static str,
-    pub offset: usize,
-}
-
-impl Stop {
-    /// The shape error a technology reports this stop as.
-    #[must_use]
-    pub fn refused(self, technology: &str) -> ShapeError {
-        ShapeError::new(technology, self.reason).at(self.offset)
-    }
-}
-
 /// Every segment of `bytes`, in order. A tag is the run of ASCII letters
 /// and digits a segment opens with.
 ///
@@ -182,19 +169,14 @@ pub fn segments<'a>(bytes: &'a [u8], delimiters: &Delimiters) -> Result<Vec<Segm
             at += 1;
             continue;
         }
-        let end = terminator_at(bytes, at, delimiters).ok_or(Stop {
-            reason: "a segment without its terminator",
-            offset: at,
-        })?;
+        let end =
+            terminator_at(bytes, at, delimiters).ok_or(("a segment without its terminator", at))?;
         let tag_len = bytes[at..end]
             .iter()
             .take_while(|byte| byte.is_ascii_alphanumeric())
             .count();
         if tag_len == 0 {
-            return Err(Stop {
-                reason: "a segment without a tag",
-                offset: at,
-            });
+            return Err(("a segment without a tag", at));
         }
         let tag = std::str::from_utf8(&bytes[at..at + tag_len]).unwrap_or("");
         found.push(Segment {
@@ -205,10 +187,7 @@ pub fn segments<'a>(bytes: &'a [u8], delimiters: &Delimiters) -> Result<Vec<Segm
         at = end + 1;
     }
     if found.is_empty() {
-        return Err(Stop {
-            reason: "no segment at all",
-            offset: 0,
-        });
+        return Err(("no segment at all", 0));
     }
     Ok(found)
 }
@@ -247,6 +226,7 @@ fn terminator_at(bytes: &[u8], from: usize, delimiters: &Delimiters) -> Option<u
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ShapeError;
 
     const EDIFACT: Delimiters = Delimiters::new(b'\'', b'+', b':').with_release(b'?');
 
@@ -297,17 +277,15 @@ mod tests {
     #[test]
     fn a_walk_stops_where_a_segment_has_no_tag_or_no_terminator_or_there_is_none() {
         let untagged = segments(b"UNB+1'+x'", &EDIFACT).expect_err("no tag");
-        assert_eq!(untagged.reason, "a segment without a tag");
-        assert_eq!(untagged.offset, 6);
+        assert_eq!(untagged, ("a segment without a tag", 6));
 
         let cut = segments(b"UNB+1'UNH+1+ORDERS?'", &EDIFACT).expect_err("released end");
-        assert_eq!(cut.reason, "a segment without its terminator");
-        assert_eq!(cut.offset, 6);
+        assert_eq!(cut, ("a segment without its terminator", 6));
 
         let none = segments(b" \r\n", &EDIFACT).expect_err("nothing");
-        assert_eq!(none.reason, "no segment at all");
+        assert_eq!(none, ("no segment at all", 0));
         assert_eq!(
-            none.refused("edi-edifact").to_string(),
+            ShapeError::refused("edi-edifact", none).to_string(),
             "edi-edifact: no segment at all at byte 0"
         );
     }

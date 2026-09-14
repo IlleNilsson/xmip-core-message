@@ -77,6 +77,11 @@ pub trait Shape: Send + Sync {
     fn shape(&self, stream: &Stream) -> Result<Shaped, ShapeError>;
 }
 
+/// Where a walk stopped and why: the reason, and the byte it stopped at.
+/// Every walk in this crate and in the technologies stops this way, and a
+/// technology reports a stop through [`ShapeError::refused`].
+pub type Stop = (&'static str, usize);
+
 /// Why content could not take a shape.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShapeError {
@@ -100,6 +105,13 @@ impl ShapeError {
     pub fn at(mut self, offset: usize) -> Self {
         self.offset = Some(offset);
         self
+    }
+
+    /// The error `technology` reports a [`Stop`] as: its reason, at its
+    /// byte. Written here once rather than by every technology (ADR-0044).
+    #[must_use]
+    pub fn refused(technology: impl Into<String>, (reason, at): Stop) -> Self {
+        Self::new(technology, reason).at(at)
     }
 }
 
@@ -128,6 +140,27 @@ pub fn media_type_of(stream: &Stream) -> Option<String> {
                 .to_ascii_lowercase()
         })
         .filter(|media| !media.is_empty())
+}
+
+/// The `name` parameter of a media type or a header value — `charset` of
+/// `text/csv; charset=utf-8`, `boundary` of a multipart type, `name` of a
+/// Content-Disposition — with its quotes taken off. Read here once for
+/// `csv` and `multipart` (ADR-0044).
+#[must_use]
+pub fn parameter<'a>(value: &'a str, name: &str) -> Option<&'a str> {
+    value.split(';').skip(1).find_map(|parameter| {
+        let (key, value) = parameter.split_once('=')?;
+        if !key.trim().eq_ignore_ascii_case(name) {
+            return None;
+        }
+        let value = value.trim();
+        Some(
+            value
+                .strip_prefix('"')
+                .and_then(|v| v.strip_suffix('"'))
+                .unwrap_or(value),
+        )
+    })
 }
 
 /// The shape for a Stream: the one that claims its media type, else the first
@@ -241,6 +274,35 @@ mod tests {
         let failed = Lines.shape(&stream(b"", None)).expect_err("empty");
         assert_eq!(failed.offset, Some(0));
         assert_eq!(failed.to_string(), "lines: no lines at all at byte 0");
+
+        let stopped: Stop = ("no lines at all", 3);
+        let refused = ShapeError::refused("lines", stopped);
+        assert_eq!(refused.technology, "lines");
+        assert_eq!(refused.reason, "no lines at all");
+        assert_eq!(refused.offset, Some(3));
+        assert_eq!(refused.to_string(), "lines: no lines at all at byte 3");
+    }
+
+    #[test]
+    fn a_parameter_is_found_by_name_regardless_of_case_and_unquoted() {
+        assert_eq!(parameter("a/b; x=\"1\"; Y=2", "y"), Some("2"));
+        assert_eq!(parameter("a/b; x=\"1\"; Y=2", "x"), Some("1"));
+        assert_eq!(
+            parameter("text/csv; header=\"absent\"", "header"),
+            Some("absent")
+        );
+        assert_eq!(
+            parameter("form-data; name=\"file\"; filename=\"a.txt\"", "filename"),
+            Some("a.txt")
+        );
+        assert_eq!(
+            parameter("multipart/mixed; boundary=q", "boundary"),
+            Some("q")
+        );
+        assert_eq!(parameter("a/b; x=\"1", "x"), Some("\"1"));
+        assert_eq!(parameter("a/b; x", "x"), None);
+        assert_eq!(parameter("a/b", "x"), None);
+        assert_eq!(parameter("x=1", "x"), None);
     }
 
     #[test]

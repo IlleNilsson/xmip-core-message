@@ -8,10 +8,8 @@
 //! shape's parts are slices of the Stream and nothing is decoded on the way.
 //! Where the walk cannot continue it stops with the reason and the byte.
 
+use crate::Stop;
 use std::ops::Range;
-
-/// Where a walk stopped and why.
-pub type Stop = (&'static str, usize);
 
 /// A record is text: UTF-8 without a NUL byte. The byte where it stops
 /// being one, if it does.

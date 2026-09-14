@@ -21,10 +21,11 @@
 //!   the Stream directly.
 
 pub mod record;
+pub mod scan;
 pub mod segment;
 mod shape;
 
-pub use shape::{Part, Shape, ShapeError, Shaped, choose, media_type_of};
+pub use shape::{Part, Shape, ShapeError, Shaped, Stop, choose, media_type_of, parameter};
 
 use context::MessageContext;
 use serde::{Deserialize, Serialize};
