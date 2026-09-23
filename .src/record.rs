@@ -67,7 +67,7 @@ impl Default for Delimited {
 
 /// The separators a delimited record is sniffed for, in the order a tie is
 /// broken.
-const SEPARATORS: [u8; 4] = [b',', b';', b'\t', b'|'];
+const SEPARATORS: [u8; 4] = *b",;\t|";
 
 impl Delimited {
     /// Records cut by `separator`, quoted with the double quote.
