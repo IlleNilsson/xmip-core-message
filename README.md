@@ -2,7 +2,9 @@
 
 The Message: a processing unit over immutable content. A Message has an
 identity, metadata, and one or more Sections, each pointing at a Stream; it
-carries its generation, its creation source and its treatment, and the shape
+carries its generation, its creation source and its treatment — the three
+presets a Message declares, `MessageTreatment::CONVERSATION`, `BUSINESS` (the
+default) and `PASS_THROUGH`, are written here beside the type — and the shape
 readers and records the content technologies share (ADR-0044).
 
 The Stream is immutable and the Message is not: context, promoted properties

@@ -26,7 +26,7 @@ pub mod scan;
 pub mod segment;
 mod shape;
 
-pub use shape::{Part, Shape, ShapeError, Shaped, Stop, choose, media_type_of, parameter};
+pub use shape::{Part, Shape, ShapeError, Shaped, Stop, choose, media_type_of};
 
 use context::MessageContext;
 use serde::{Deserialize, Serialize};
@@ -95,13 +95,34 @@ pub struct MessageTreatment {
     pub durability: MessageDurability,
 }
 
+impl MessageTreatment {
+    /// A caller is waiting. Latency over history.
+    pub const CONVERSATION: Self = Self {
+        priority: MessagePriority::Immediate,
+        execution_profile: ExecutionProfile::Conversation,
+        durability: MessageDurability::Ephemeral,
+    };
+
+    /// The default. Full history, full recovery.
+    pub const BUSINESS: Self = Self {
+        priority: MessagePriority::Normal,
+        execution_profile: ExecutionProfile::Business,
+        durability: MessageDurability::Recoverable,
+    };
+
+    /// Moved, not understood.
+    pub const PASS_THROUGH: Self = Self {
+        priority: MessagePriority::Background,
+        execution_profile: ExecutionProfile::PassThrough,
+        durability: MessageDurability::Durable,
+    };
+}
+
+/// [`MessageTreatment::BUSINESS`]: a Message that declares nothing gets full
+/// history and full recovery.
 impl Default for MessageTreatment {
     fn default() -> Self {
-        Self {
-            priority: MessagePriority::Normal,
-            execution_profile: ExecutionProfile::Business,
-            durability: MessageDurability::Recoverable,
-        }
+        Self::BUSINESS
     }
 }
 
@@ -304,15 +325,37 @@ mod tests {
 
     #[test]
     fn treatment_survives_derivation() {
-        let treatment = MessageTreatment {
-            priority: MessagePriority::Background,
-            execution_profile: ExecutionProfile::PassThrough,
-            durability: MessageDurability::Durable,
-        };
+        let treatment = MessageTreatment::PASS_THROUGH;
         let first = received().with_treatment(treatment);
         let second = first.assigned(MessageId::new(2), MessageContext::new());
 
         assert_eq!(second.treatment(), treatment);
+    }
+
+    #[test]
+    fn the_three_treatments_differ_in_what_survives_a_restart() {
+        // A declaration about the work, not a measurement of the payload.
+        assert_eq!(
+            MessageTreatment::CONVERSATION.priority,
+            MessagePriority::Immediate
+        );
+        assert_eq!(
+            MessageTreatment::PASS_THROUGH.priority,
+            MessagePriority::Background
+        );
+        assert_eq!(
+            MessageTreatment::CONVERSATION.durability,
+            MessageDurability::Ephemeral
+        );
+        assert_eq!(
+            MessageTreatment::BUSINESS.durability,
+            MessageDurability::Recoverable
+        );
+        assert_eq!(
+            MessageTreatment::PASS_THROUGH.durability,
+            MessageDurability::Durable
+        );
+        assert_eq!(MessageTreatment::default(), MessageTreatment::BUSINESS);
     }
 
     #[test]

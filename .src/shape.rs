@@ -126,41 +126,15 @@ impl std::fmt::Display for ShapeError {
 
 impl std::error::Error for ShapeError {}
 
-/// The media type of a Stream without its parameters, lower-case.
+/// The media type of a Stream without its parameters, lower-case, as
+/// `codec::mime` reads a media type — where a shape also finds a
+/// parameter, `charset` or `boundary`.
 #[must_use]
 pub fn media_type_of(stream: &Stream) -> Option<String> {
     stream
         .media_type()
-        .map(|media| {
-            media
-                .split(';')
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_ascii_lowercase()
-        })
+        .map(codec::mime::media_type)
         .filter(|media| !media.is_empty())
-}
-
-/// The `name` parameter of a media type or a header value — `charset` of
-/// `text/csv; charset=utf-8`, `boundary` of a multipart type, `name` of a
-/// Content-Disposition — with its quotes taken off. Read here once for
-/// `csv` and `multipart` (ADR-0044).
-#[must_use]
-pub fn parameter<'a>(value: &'a str, name: &str) -> Option<&'a str> {
-    value.split(';').skip(1).find_map(|parameter| {
-        let (key, value) = parameter.split_once('=')?;
-        if !key.trim().eq_ignore_ascii_case(name) {
-            return None;
-        }
-        let value = value.trim();
-        Some(
-            value
-                .strip_prefix('"')
-                .and_then(|v| v.strip_suffix('"'))
-                .unwrap_or(value),
-        )
-    })
 }
 
 /// The shape for a Stream: the one that claims its media type, else the first
@@ -281,28 +255,6 @@ mod tests {
         assert_eq!(refused.reason, "no lines at all");
         assert_eq!(refused.offset, Some(3));
         assert_eq!(refused.to_string(), "lines: no lines at all at byte 3");
-    }
-
-    #[test]
-    fn a_parameter_is_found_by_name_regardless_of_case_and_unquoted() {
-        assert_eq!(parameter("a/b; x=\"1\"; Y=2", "y"), Some("2"));
-        assert_eq!(parameter("a/b; x=\"1\"; Y=2", "x"), Some("1"));
-        assert_eq!(
-            parameter("text/csv; header=\"absent\"", "header"),
-            Some("absent")
-        );
-        assert_eq!(
-            parameter("form-data; name=\"file\"; filename=\"a.txt\"", "filename"),
-            Some("a.txt")
-        );
-        assert_eq!(
-            parameter("multipart/mixed; boundary=q", "boundary"),
-            Some("q")
-        );
-        assert_eq!(parameter("a/b; x=\"1", "x"), Some("\"1"));
-        assert_eq!(parameter("a/b; x", "x"), None);
-        assert_eq!(parameter("a/b", "x"), None);
-        assert_eq!(parameter("x=1", "x"), None);
     }
 
     #[test]
