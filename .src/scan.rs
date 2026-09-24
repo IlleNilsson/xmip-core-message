@@ -111,6 +111,25 @@ pub fn varint(bytes: &[u8], at: usize) -> Result<(u64, usize), Stop> {
     Err(("the bytes end inside a varint", bytes.len()))
 }
 
+/// `value` as a base-128 little-endian varint: the inverse of [`varint`].
+///
+/// One encoder beside the one decoder. Until 2026-09-23 the contract
+/// capability carried its own, which the protobuf and Avro contracts and the
+/// Playground's probes wrote through (open-problems.md, problem 25).
+#[must_use]
+pub fn encode_varint(mut value: u64) -> Vec<u8> {
+    let mut out = Vec::with_capacity(10);
+    loop {
+        let low = u8::try_from(value & 0x7f).unwrap_or(0);
+        value >>= 7;
+        if value == 0 {
+            out.push(low);
+            return out;
+        }
+        out.push(low | 0x80);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +182,15 @@ mod tests {
             Err(("a varint runs past ten bytes", 0))
         );
         assert_eq!(varint(&[], 3), Err(("the bytes end inside a varint", 0)));
+    }
+
+    #[test]
+    fn an_encoded_varint_reads_back_as_itself() {
+        for value in [0, 1, 127, 128, 150, 300, u64::MAX] {
+            let bytes = encode_varint(value);
+            assert_eq!(varint(&bytes, 0), Ok((value, bytes.len())), "{value}");
+        }
+        assert_eq!(encode_varint(300), [0xac, 0x02]);
+        assert_eq!(encode_varint(u64::MAX).len(), 10);
     }
 }

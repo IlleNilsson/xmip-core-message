@@ -20,6 +20,7 @@
 //!   mutable Stream were possible; nothing in Xmip permits one. Sections carry
 //!   the Stream directly.
 
+pub mod protobuf;
 pub mod record;
 pub mod scan;
 pub mod segment;
