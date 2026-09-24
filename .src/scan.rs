@@ -5,8 +5,10 @@
 //! lived here once. What a grammar makes of the bytes stays with the
 //! technology (ADR-0044 clause 2): this file is the walking, not the reading.
 //!
-//! Beside the cursor, the base-128 varint `protobuf` and `avro` both write
-//! their integers as, read unsigned. Avro's zig-zag over it is Avro's.
+//! Beside the cursor, where a varint lies in the bytes: the varint and
+//! Avro's zig-zag over it are `codec::varint`, the estate's one.
+
+use codec::varint::VarintError;
 
 use crate::Stop;
 
@@ -91,42 +93,19 @@ impl<'a> Scan<'a> {
     }
 }
 
-/// The base-128 little-endian varint at `at`: its value and the byte after
-/// it. Seven bits a byte, low bits first, the high bit saying another byte
-/// follows; ten bytes carry sixty-four bits and an eleventh is refused.
+/// The varint at `at`, which `protobuf` and `avro` both write their
+/// integers as: its value and the byte after it, a refusal placed where it
+/// happened — the end of the bytes for one cut off, its first byte for one
+/// past ten bytes. The varint itself is `codec::varint`; the placement is
+/// what a shape's [`Stop`] says.
 ///
 /// # Errors
 /// The bytes end inside the varint, or it runs past ten bytes.
 pub fn varint(bytes: &[u8], at: usize) -> Result<(u64, usize), Stop> {
-    let mut value: u64 = 0;
-    for (index, byte) in bytes.get(at..).unwrap_or(&[]).iter().enumerate() {
-        if index >= 10 {
-            return Err(("a varint runs past ten bytes", at));
-        }
-        value |= u64::from(byte & 0x7f) << (7 * index);
-        if byte & 0x80 == 0 {
-            return Ok((value, at + index + 1));
-        }
-    }
-    Err(("the bytes end inside a varint", bytes.len()))
-}
-
-/// `value` as a base-128 little-endian varint: the inverse of [`varint`].
-///
-/// One encoder beside the one decoder. Until 2026-09-23 the contract
-/// capability carried its own, which the protobuf and Avro contracts and the
-/// Playground's probes wrote through (open-problems.md, problem 25).
-#[must_use]
-pub fn encode_varint(mut value: u64) -> Vec<u8> {
-    let mut out = Vec::with_capacity(10);
-    loop {
-        let low = u8::try_from(value & 0x7f).unwrap_or(0);
-        value >>= 7;
-        if value == 0 {
-            out.push(low);
-            return out;
-        }
-        out.push(low | 0x80);
+    match codec::varint::decode(bytes.get(at..).unwrap_or(&[])) {
+        Ok((value, length)) => Ok((value, at + length)),
+        Err(error @ VarintError::Unterminated) => Err((error.as_str(), bytes.len())),
+        Err(error @ VarintError::Overlong) => Err((error.as_str(), at)),
     }
 }
 
@@ -182,15 +161,5 @@ mod tests {
             Err(("a varint runs past ten bytes", 0))
         );
         assert_eq!(varint(&[], 3), Err(("the bytes end inside a varint", 0)));
-    }
-
-    #[test]
-    fn an_encoded_varint_reads_back_as_itself() {
-        for value in [0, 1, 127, 128, 150, 300, u64::MAX] {
-            let bytes = encode_varint(value);
-            assert_eq!(varint(&bytes, 0), Ok((value, bytes.len())), "{value}");
-        }
-        assert_eq!(encode_varint(300), [0xac, 0x02]);
-        assert_eq!(encode_varint(u64::MAX).len(), 10);
     }
 }

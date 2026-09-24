@@ -11,8 +11,10 @@
 //! one — and let field numbers past the format's range through
 //! (open-problems.md, problem 25, row c).
 
+use codec::varint;
+
 use crate::Stop;
-use crate::scan::{encode_varint, varint};
+use crate::scan;
 use std::ops::Range;
 
 /// The largest field number the format allows.
@@ -102,7 +104,7 @@ pub fn delimited(bytes: &[u8]) -> Result<Vec<Range<usize>>, Stop> {
     let mut at = 0;
     let mut messages = Vec::new();
     while at < bytes.len() {
-        let (length, start) = varint(bytes, at)?;
+        let (length, start) = scan::varint(bytes, at)?;
         let end = usize::try_from(length)
             .ok()
             .and_then(|length| start.checked_add(length))
@@ -117,14 +119,14 @@ pub fn delimited(bytes: &[u8]) -> Result<Vec<Range<usize>>, Stop> {
 /// The tag of field `number` carried as `wire`.
 #[must_use]
 pub fn encode_tag(number: u32, wire: WireType) -> Vec<u8> {
-    encode_varint((u64::from(number) << 3) | u64::from(wire.number()))
+    varint::encode((u64::from(number) << 3) | u64::from(wire.number()))
 }
 
 /// Field `number` holding `bytes` behind their length.
 #[must_use]
 pub fn encode_delimited(number: u32, bytes: &[u8]) -> Vec<u8> {
     let mut out = encode_tag(number, WireType::Len);
-    out.extend(encode_varint(bytes.len() as u64));
+    out.extend(varint::encode(bytes.len() as u64));
     out.extend_from_slice(bytes);
     out
 }
@@ -187,7 +189,7 @@ impl<'a> Reader<'a> {
     /// A tag, and whether it closes a group.
     fn any_tag(&mut self) -> Result<(Tag, bool), Stop> {
         let at = self.at;
-        let (raw, next) = varint(self.bytes, at)?;
+        let (raw, next) = scan::varint(self.bytes, at)?;
         let number = match raw >> 3 {
             n @ 1..=LARGEST_FIELD => {
                 u32::try_from(n).map_err(|_| ("a field number too large", at))?
@@ -210,11 +212,11 @@ impl<'a> Reader<'a> {
     fn value_at(&mut self, tag: Tag, depth: usize) -> Result<Range<usize>, Stop> {
         let at = self.at;
         let value = match tag.wire {
-            WireType::Varint => at..varint(self.bytes, at)?.1,
+            WireType::Varint => at..scan::varint(self.bytes, at)?.1,
             WireType::I64 => at..at + 8,
             WireType::I32 => at..at + 4,
             WireType::Len => {
-                let (length, start) = varint(self.bytes, at)?;
+                let (length, start) = scan::varint(self.bytes, at)?;
                 let length = usize::try_from(length).map_err(|_| ("a length too large", at))?;
                 start..start.saturating_add(length)
             }
