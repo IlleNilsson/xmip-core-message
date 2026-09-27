@@ -1,95 +1,63 @@
-//! The byte cursor the scanning shapes share (ADR-0044). A JSON document,
-//! an XML document and an Avro schema are each read by a cursor over the
-//! bytes that peeks at the next one, skips whitespace and takes a quoted
-//! string; `json`, `xml` and `avro` had each written that cursor before it
-//! lived here once. What a grammar makes of the bytes stays with the
+//! What the scanning shapes share over the one byte cursor,
+//! `codec::cursor::Cursor` (ADR-0044): a quoted string as JSON writes one,
+//! which a JSON document and an Avro schema both take, and where a varint
+//! lies in the bytes. What a grammar makes of the bytes stays with the
 //! technology (ADR-0044 clause 2): this file is the walking, not the reading.
 //!
-//! Beside the cursor, where a varint lies in the bytes: the varint and
-//! Avro's zig-zag over it are `codec::varint`, the estate's one.
+//! The varint and Avro's zig-zag over it are `codec::varint`, the estate's
+//! one.
 
+use codec::cursor::Cursor;
 use codec::varint::VarintError;
 
 use crate::Stop;
 
-/// Where a scan is in its bytes.
-#[derive(Debug)]
-pub struct Scan<'a> {
-    pub bytes: &'a [u8],
-    pub at: usize,
+/// The string whose opening quote is under the cursor: the raw bytes between
+/// the quotes, escapes as JSON writes them and left as written. The cursor
+/// ends after the closing quote.
+///
+/// # Errors
+/// The string never closes, carries a control byte, or carries an escape
+/// JSON does not have.
+pub fn string<'a>(cursor: &mut Cursor<'a>) -> Result<&'a [u8], Stop> {
+    cursor.advance(1);
+    let start = cursor.position();
+    loop {
+        match cursor.peek() {
+            None => return Err(("unterminated string", cursor.position())),
+            Some(b'"') => {
+                let raw = cursor.since(start);
+                cursor.advance(1);
+                return Ok(raw);
+            }
+            Some(b'\\') => {
+                cursor.advance(1);
+                escape(cursor)?;
+            }
+            Some(byte) if byte < 0x20 => {
+                return Err(("control byte in a string", cursor.position()));
+            }
+            Some(_) => cursor.advance(1),
+        }
+    }
 }
 
-impl<'a> Scan<'a> {
-    /// A scan at the first byte.
-    #[must_use]
-    pub const fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, at: 0 }
-    }
-
-    /// The byte under the cursor, when there is one.
-    #[must_use]
-    pub fn peek(&self) -> Option<u8> {
-        self.bytes.get(self.at).copied()
-    }
-
-    /// Everything from the cursor on.
-    #[must_use]
-    pub fn rest(&self) -> &'a [u8] {
-        &self.bytes[self.at.min(self.bytes.len())..]
-    }
-
-    /// Past any run of space, tab, carriage return and line feed: the
-    /// whitespace JSON and XML both name.
-    pub fn whitespace(&mut self) {
-        while matches!(self.peek(), Some(b' ' | b'\t' | b'\r' | b'\n')) {
-            self.at += 1;
+/// Past the escape whose letter is under the cursor.
+fn escape(cursor: &mut Cursor<'_>) -> Result<(), Stop> {
+    let at = cursor.position();
+    match cursor.peek() {
+        Some(b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't') => {
+            cursor.advance(1);
+            Ok(())
         }
-    }
-
-    /// The string whose opening quote is under the cursor: the raw bytes
-    /// between the quotes, escapes as JSON writes them and left as written.
-    /// The cursor ends after the closing quote.
-    ///
-    /// # Errors
-    /// The string never closes, carries a control byte, or carries an
-    /// escape JSON does not have.
-    pub fn string(&mut self) -> Result<&'a [u8], Stop> {
-        let start = self.at + 1;
-        self.at = start;
-        loop {
-            match self.peek() {
-                None => return Err(("unterminated string", self.at)),
-                Some(b'"') => {
-                    let raw = &self.bytes[start..self.at];
-                    self.at += 1;
-                    return Ok(raw);
-                }
-                Some(b'\\') => {
-                    self.at += 1;
-                    self.escape()?;
-                }
-                Some(byte) if byte < 0x20 => return Err(("control byte in a string", self.at)),
-                Some(_) => self.at += 1,
-            }
-        }
-    }
-
-    /// Past the escape whose letter is under the cursor.
-    fn escape(&mut self) -> Result<(), Stop> {
-        match self.peek() {
-            Some(b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't') => {
-                self.at += 1;
+        Some(b'u') => match cursor.remaining().get(1..5) {
+            Some(hex) if hex.iter().all(u8::is_ascii_hexdigit) => {
+                cursor.advance(5);
                 Ok(())
             }
-            Some(b'u') => match self.bytes.get(self.at + 1..self.at + 5) {
-                Some(hex) if hex.iter().all(u8::is_ascii_hexdigit) => {
-                    self.at += 5;
-                    Ok(())
-                }
-                _ => Err(("bad escape", self.at)),
-            },
-            _ => Err(("bad escape", self.at)),
-        }
+            _ => Err(("bad escape", at)),
+        },
+        _ => Err(("bad escape", at)),
     }
 }
 
@@ -114,35 +82,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_cursor_peeks_skips_whitespace_and_takes_a_string_as_written() {
-        let mut scan = Scan::new(b" \t\r\n\"a\\\"b\\u00e9\" x");
-        scan.whitespace();
-        assert_eq!(scan.at, 4);
-        assert_eq!(scan.peek(), Some(b'"'));
-        assert_eq!(scan.string(), Ok(&b"a\\\"b\\u00e9"[..]));
-        assert_eq!(scan.rest(), b" x");
-        scan.whitespace();
-        assert_eq!(scan.peek(), Some(b'x'));
-        scan.at += 1;
-        assert_eq!(scan.peek(), None);
-        assert_eq!(scan.rest(), b"");
-        assert_eq!(Scan::new(b"\"\"").string(), Ok(&b""[..]));
+    fn a_string_is_taken_as_written_and_the_cursor_ends_after_it() {
+        let mut cursor = Cursor::new(b" \t\r\n\"a\\\"b\\u00e9\" x");
+        cursor.skip_whitespace();
+        assert_eq!(cursor.position(), 4);
+        assert_eq!(string(&mut cursor), Ok(&b"a\\\"b\\u00e9"[..]));
+        assert_eq!(cursor.remaining(), b" x");
+        assert_eq!(string(&mut Cursor::new(b"\"\"")), Ok(&b""[..]));
     }
 
     #[test]
     fn a_string_stops_where_it_cannot_continue() {
-        assert_eq!(
-            Scan::new(b"\"abc").string(),
-            Err(("unterminated string", 4))
-        );
-        assert_eq!(
-            Scan::new(b"\"a\nb\"").string(),
-            Err(("control byte in a string", 2))
-        );
-        assert_eq!(Scan::new(b"\"\\x\"").string(), Err(("bad escape", 2)));
-        assert_eq!(Scan::new(b"\"\\u12G4\"").string(), Err(("bad escape", 2)));
-        assert_eq!(Scan::new(b"\"\\u12").string(), Err(("bad escape", 2)));
-        assert_eq!(Scan::new(b"\"\\").string(), Err(("bad escape", 2)));
+        let taken = |bytes: &[u8]| string(&mut Cursor::new(bytes)).map(<[u8]>::to_vec);
+        assert_eq!(taken(b"\"abc"), Err(("unterminated string", 4)));
+        assert_eq!(taken(b"\"a\nb\""), Err(("control byte in a string", 2)));
+        assert_eq!(taken(b"\"\\x\""), Err(("bad escape", 2)));
+        assert_eq!(taken(b"\"\\u12G4\""), Err(("bad escape", 2)));
+        assert_eq!(taken(b"\"\\u12"), Err(("bad escape", 2)));
+        assert_eq!(taken(b"\"\\"), Err(("bad escape", 2)));
     }
 
     #[test]

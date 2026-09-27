@@ -15,6 +15,10 @@ length put before it afterwards (`write_message`). What writes protobuf in
 the estate writes it with these, the observe capability's OTLP exporter
 first; nothing carries prost.
 
+The scanning shapes — JSON, XML, an Avro schema — walk `codec::cursor::Cursor`,
+the estate's one byte cursor; what they share over it is here in `scan`: a
+quoted string as JSON writes one, and where a varint lies in the bytes.
+
 The Stream is immutable and the Message is not: context, promoted properties
 and execution history accumulate as it is handled, while the content it refers
 to never changes. Content changes only through Assignment or Transformation,

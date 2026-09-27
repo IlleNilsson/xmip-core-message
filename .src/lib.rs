@@ -273,7 +273,7 @@ mod tests {
         let first = received();
         let assigned = first.assigned(
             MessageId::new(2),
-            MessageContext::new().with_value("order.id", context::ContextValue::Text("A-1".into())),
+            MessageContext::new().with_value("order.id", xcore::ScalarValue::Text("A-1".into())),
         );
 
         assert_eq!(assigned.generation(), 1);
