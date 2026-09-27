@@ -119,16 +119,77 @@ pub fn delimited(bytes: &[u8]) -> Result<Vec<Range<usize>>, Stop> {
 /// The tag of field `number` carried as `wire`.
 #[must_use]
 pub fn encode_tag(number: u32, wire: WireType) -> Vec<u8> {
-    varint::encode((u64::from(number) << 3) | u64::from(wire.number()))
+    let mut out = Vec::with_capacity(varint::MAX_LENGTH);
+    write_tag(&mut out, number, wire);
+    out
 }
 
 /// Field `number` holding `bytes` behind their length.
 #[must_use]
 pub fn encode_delimited(number: u32, bytes: &[u8]) -> Vec<u8> {
-    let mut out = encode_tag(number, WireType::Len);
-    out.extend(varint::encode(bytes.len() as u64));
-    out.extend_from_slice(bytes);
+    let mut out = Vec::with_capacity(bytes.len() + 2 * varint::MAX_LENGTH);
+    write_delimited(&mut out, number, bytes);
     out
+}
+
+/// The tag of field `number` carried as `wire`, appended to `out`: the
+/// writing half of [`Reader::tag`], and what every other writer here opens
+/// with.
+#[inline]
+pub fn write_tag(out: &mut Vec<u8>, number: u32, wire: WireType) {
+    varint::encode_into(out, (u64::from(number) << 3) | u64::from(wire.number()));
+}
+
+/// Field `number` as a varint holding `value`: an `int64` or `uint64`, a
+/// `uint32`, a `bool`, an enum. A negative `int64` is its two's-complement
+/// bits, ten bytes, as the format writes it.
+#[inline]
+pub fn write_varint(out: &mut Vec<u8>, number: u32, value: u64) {
+    write_tag(out, number, WireType::Varint);
+    varint::encode_into(out, value);
+}
+
+/// Field `number` as eight bytes, least significant first: a `fixed64`, an
+/// `sfixed64` as its bits, a `double` as `f64::to_bits`.
+#[inline]
+pub fn write_i64(out: &mut Vec<u8>, number: u32, bits: u64) {
+    write_tag(out, number, WireType::I64);
+    out.extend_from_slice(&bits.to_le_bytes());
+}
+
+/// Field `number` holding `bytes` behind their length: a string, bytes, or
+/// an embedded message already written.
+#[inline]
+pub fn write_delimited(out: &mut Vec<u8>, number: u32, bytes: &[u8]) {
+    write_tag(out, number, WireType::Len);
+    varint::encode_into(out, bytes.len() as u64);
+    out.extend_from_slice(bytes);
+}
+
+/// Field `number` holding the embedded message `body` writes, behind its
+/// length.
+///
+/// The length is known only once the body is written. One byte is held
+/// for it, which is all a length under 128 takes — most messages' — and a
+/// longer one moves the body along once for the bytes it needs. Nothing is
+/// written twice or into a buffer of its own.
+pub fn write_message(out: &mut Vec<u8>, number: u32, body: impl FnOnce(&mut Vec<u8>)) {
+    write_tag(out, number, WireType::Len);
+    let head = out.len();
+    out.push(0);
+    let start = out.len();
+    body(out);
+    let end = out.len();
+    let length = end - start;
+    if let Ok(short @ 0..0x80) = u8::try_from(length) {
+        out[head] = short;
+        return;
+    }
+    let written = varint::encode(length as u64);
+    let extra = written.len() - 1;
+    out.resize(end + extra, 0);
+    out.copy_within(start..end, start + extra);
+    out[head..=head + extra].copy_from_slice(&written);
 }
 
 /// A field's tag: its number, its wire type and the byte it starts at.
@@ -252,6 +313,39 @@ impl<'a> Reader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_is_written_walks_back_as_the_fields_it_wrote() {
+        // The specification's own example: field 1 varint 150 is 08 96 01.
+        let mut out = Vec::new();
+        write_varint(&mut out, 1, 150);
+        assert_eq!(out, [0x08, 0x96, 0x01]);
+
+        write_i64(&mut out, 2, 7.5f64.to_bits());
+        write_message(&mut out, 3, |inner| {
+            write_delimited(inner, 1, b"testing");
+            write_message(inner, 2, |_| {});
+        });
+        let walked = fields(&out, 0..out.len()).expect("walks");
+        let shape: Vec<(u32, WireType)> = walked.iter().map(|f| (f.number, f.wire)).collect();
+        assert_eq!(
+            shape,
+            [
+                (1, WireType::Varint),
+                (2, WireType::I64),
+                (3, WireType::Len)
+            ]
+        );
+        let bits = u64::from_le_bytes(out[walked[1].value.clone()].try_into().expect("eight"));
+        assert!((f64::from_bits(bits) - 7.5).abs() < f64::EPSILON);
+        let inner = fields(&out, walked[2].value.clone()).expect("walks");
+        assert_eq!(&out[inner[0].value.clone()], b"testing");
+        assert!(
+            inner[1].value.is_empty(),
+            "an empty message is a zero length"
+        );
+        assert_eq!(encode_delimited(1, b"ab"), [0x0a, 0x02, b'a', b'b']);
+    }
 
     #[test]
     fn a_cut_varint_stops_the_walk_where_the_bytes_end() {

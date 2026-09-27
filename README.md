@@ -7,6 +7,14 @@ presets a Message declares, `MessageTreatment::CONVERSATION`, `BUSINESS` (the
 default) and `PASS_THROUGH`, are written here beside the type — and the shape
 readers and records the content technologies share (ADR-0044).
 
+The Protocol Buffers wire format is here once, both halves (`protobuf`):
+the walk the protobuf shape sections by and the protobuf contract checks a
+schema against, and the writer — a tag, a varint, eight bytes, a
+length-delimited field, and an embedded message written in place with its
+length put before it afterwards (`write_message`). What writes protobuf in
+the estate writes it with these, the observe capability's OTLP exporter
+first; nothing carries prost.
+
 The Stream is immutable and the Message is not: context, promoted properties
 and execution history accumulate as it is handled, while the content it refers
 to never changes. Content changes only through Assignment or Transformation,
