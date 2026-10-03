@@ -19,6 +19,15 @@ The scanning shapes — JSON, XML, an Avro schema — walk `codec::cursor::Curso
 the estate's one byte cursor; what they share over it is here in `scan`: a
 quoted string as JSON writes one, and where a varint lies in the bytes.
 
+A Message's one binary form, what the Ledger keeps as the body of Xmip
+Storage's Message record, is here with the type (`message_record`):
+`Message::record` writes it — the form's number, the identifiers, lineage,
+treatment and Context in their order, and each Section's Stream by its
+identifier, length and media type, never its bytes, which the Ledger keeps
+in chunks — and `Message::from_record` reads it back, each Stream kept
+(`Stream::kept`) where its caller reads it from, never whole. Binary, not JSON: the estate keeps no JSON at rest
+(ADR-0031 clause 3), and the record is written for every Message.
+
 The Stream is immutable and the Message is not: context, promoted properties
 and execution history accumulate as it is handled, while the content it refers
 to never changes. Content changes only through Assignment or Transformation,
