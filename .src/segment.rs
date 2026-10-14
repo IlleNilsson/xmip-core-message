@@ -271,7 +271,7 @@ mod tests {
         assert_eq!(walked[1].elements(&tradacoms), [&b"6"[..]]);
 
         let bare = segments(b"UNZ'", &EDIFACT).expect("well-formed");
-        assert!(bare[0].elements(&EDIFACT).is_empty());
+        assert_eq!(bare[0].elements(&EDIFACT), [] as [&[u8]; 0]);
     }
 
     #[test]
