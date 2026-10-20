@@ -10,7 +10,7 @@
 //! A segment is the bytes from its tag to its terminator, the terminator
 //! excluded: it is framing, as a multipart boundary is. Whitespace between
 //! segments is skipped, because interchanges are written one segment per
-//! line as often as not; a terminator that is itself a line break is honoured
+//! line as often as not; a terminator that is itself a line break is honored
 //! before that. Elements are handed back raw — releases in place, components
 //! unsplit — because a shape sections and a contract reads. Where the walk
 //! cannot continue it stops with the reason and the byte, as every walk in
@@ -291,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn a_terminator_that_is_a_line_break_is_honoured_and_a_split_keeps_released_separators() {
+    fn a_terminator_that_is_a_line_break_is_honored_and_a_split_keeps_released_separators() {
         let hl7 = Delimiters::new(b'\r', b'|', b'^');
         let walked = segments(b"MSH|^~\\&|A|B\r\nPID|1||X^Y\r\n", &hl7).expect("well-formed");
         assert_eq!(walked.len(), 2);

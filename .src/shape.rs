@@ -68,7 +68,7 @@ pub trait Shape: Send + Sync {
 
     /// Whether the bytes look like this shape, asked only when no media type
     /// says. `binary` says yes to everything and is asked last.
-    fn recognises(&self, bytes: &[u8]) -> bool;
+    fn recognizes(&self, bytes: &[u8]) -> bool;
 
     /// The parts and the announced type.
     ///
@@ -138,7 +138,7 @@ pub fn media_type_of(stream: &Stream) -> Option<String> {
 }
 
 /// The shape for a Stream: the one that claims its media type, else the first
-/// that recognises the bytes, in the order given. `None` when nothing does,
+/// that recognizes the bytes, in the order given. `None` when nothing does,
 /// which a caller resolves with `binary` if it has one.
 #[must_use]
 pub fn choose<'a>(shapes: &[&'a dyn Shape], stream: &Stream) -> Option<&'a dyn Shape> {
@@ -153,7 +153,7 @@ pub fn choose<'a>(shapes: &[&'a dyn Shape], stream: &Stream) -> Option<&'a dyn S
 
     shapes
         .iter()
-        .find(|shape| shape.recognises(stream.bytes()))
+        .find(|shape| shape.recognizes(stream.bytes()))
         .copied()
 }
 
@@ -173,7 +173,7 @@ mod tests {
             &["text/lines"]
         }
 
-        fn recognises(&self, bytes: &[u8]) -> bool {
+        fn recognizes(&self, bytes: &[u8]) -> bool {
             bytes.contains(&b'\n')
         }
 
@@ -205,7 +205,7 @@ mod tests {
             &["application/octet-stream"]
         }
 
-        fn recognises(&self, _: &[u8]) -> bool {
+        fn recognizes(&self, _: &[u8]) -> bool {
             true
         }
 
