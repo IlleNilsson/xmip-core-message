@@ -47,6 +47,11 @@ pub enum MessageCreationSource {
     Assignment,
     Transformation,
     SendPreparation,
+    /// Messages of one key collected by a Work Process and made one, their
+    /// Sections in the order received.
+    Batch,
+    /// A part a Work Process split a Message into.
+    Debatch,
 }
 
 /// How urgently this Message should be picked up relative to others.

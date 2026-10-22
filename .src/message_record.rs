@@ -76,6 +76,8 @@ worded!(MessageCreationSource, SOURCES, "created_by", {
     Assignment,
     Transformation,
     SendPreparation,
+    Batch,
+    Debatch,
 });
 worded!(MessagePriority, PRIORITIES, "priority", {
     Immediate,
@@ -97,11 +99,13 @@ worded!(MessageDurability, DURABILITIES, "durability", {
 
 // Every value of each kind, in the order the form numbers them, which only
 // grows at its end.
-const SOURCES: [MessageCreationSource; 4] = [
+const SOURCES: [MessageCreationSource; 6] = [
     MessageCreationSource::Receive,
     MessageCreationSource::Assignment,
     MessageCreationSource::Transformation,
     MessageCreationSource::SendPreparation,
+    MessageCreationSource::Batch,
+    MessageCreationSource::Debatch,
 ];
 const PRIORITIES: [MessagePriority; 5] = [
     MessagePriority::Immediate,
