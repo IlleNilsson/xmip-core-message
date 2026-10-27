@@ -243,6 +243,24 @@ impl Message {
         }
     }
 
+    /// One part a Debatch split this Message into: the next generation,
+    /// its own content, whether split in a Work Process or as the Stream was
+    /// received (ADR-0031, amendment 2026-10-22: *One splitting
+    /// implementation, placed once, is called from both*).
+    pub fn debatched(
+        &self,
+        message_id: MessageId,
+        sections: impl Into<Arc<[MessageSection]>>,
+        context: MessageContext,
+    ) -> Self {
+        self.transformed(
+            message_id,
+            sections,
+            context,
+            MessageCreationSource::Debatch,
+        )
+    }
+
     /// Treatment is declared once and carried, not re-decided per generation.
     #[must_use]
     pub fn with_treatment(mut self, treatment: MessageTreatment) -> Self {
@@ -306,6 +324,24 @@ mod tests {
             transformed.sections()[0].stream.id()
         );
         assert_eq!(transformed.generation(), 1);
+    }
+
+    #[test]
+    fn a_debatched_part_is_the_next_generation_with_its_own_stream() {
+        let first = received();
+        let part = first.debatched(
+            MessageId::new(2),
+            vec![section(12, b"<line/>")],
+            first.context().clone(),
+        );
+
+        assert_eq!(part.created_by(), MessageCreationSource::Debatch);
+        assert_eq!(part.previous_message_id(), Some(first.message_id()));
+        assert_eq!(part.generation(), 1);
+        assert_ne!(
+            first.sections()[0].stream.id(),
+            part.sections()[0].stream.id()
+        );
     }
 
     #[test]
