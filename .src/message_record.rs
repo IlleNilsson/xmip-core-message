@@ -75,7 +75,6 @@ worded!(MessageCreationSource, SOURCES, "created_by", {
     Receive,
     Assignment,
     Transformation,
-    SendPreparation,
     Batch,
     Debatch,
 });
@@ -99,11 +98,10 @@ worded!(MessageDurability, DURABILITIES, "durability", {
 
 // Every value of each kind, in the order the form numbers them, which only
 // grows at its end.
-const SOURCES: [MessageCreationSource; 6] = [
+const SOURCES: [MessageCreationSource; 5] = [
     MessageCreationSource::Receive,
     MessageCreationSource::Assignment,
     MessageCreationSource::Transformation,
-    MessageCreationSource::SendPreparation,
     MessageCreationSource::Batch,
     MessageCreationSource::Debatch,
 ];
@@ -395,8 +393,8 @@ mod tests {
             );
         }
         assert_eq!(
-            MessageCreationSource::SendPreparation.word(),
-            "SendPreparation"
+            MessageCreationSource::Transformation.word(),
+            "Transformation"
         );
         assert_eq!(MessagePriority::worded("immediate"), None);
     }

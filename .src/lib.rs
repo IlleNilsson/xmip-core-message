@@ -46,7 +46,6 @@ pub enum MessageCreationSource {
     Receive,
     Assignment,
     Transformation,
-    SendPreparation,
     /// Messages of one key collected by a Work Process and made one, their
     /// Sections in the order received.
     Batch,
@@ -205,7 +204,10 @@ impl Message {
         &self.context
     }
 
-    /// New content: a Transformation, or a Send preparation that rewrites.
+    /// New content: a Transformation. Preparation makes no Message: it works on
+    /// a Stream's bytes, before a Message exists on receive and after it is
+    /// serialized on send (the owner, 2026-10-22: *A transformation is not a
+    /// prepare*).
     ///
     /// The Sections are new because their Streams are new. Nothing was edited —
     /// the previous generation is still exactly as it was.
