@@ -8,6 +8,10 @@
 //! shape's parts are slices of the Stream and nothing is decoded on the way.
 //! Where the walk cannot continue it stops with the reason and the byte.
 
+mod streamed;
+
+pub use streamed::Walked;
+
 use crate::Stop;
 use std::ops::Range;
 

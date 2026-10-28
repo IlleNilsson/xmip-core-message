@@ -75,7 +75,6 @@ worded!(MessageCreationSource, SOURCES, "created_by", {
     Receive,
     Assignment,
     Transformation,
-    SendPreparation,
 });
 worded!(MessagePriority, PRIORITIES, "priority", {
     Immediate,
@@ -97,11 +96,10 @@ worded!(MessageDurability, DURABILITIES, "durability", {
 
 // Every value of each kind, in the order the form numbers them, which only
 // grows at its end.
-const SOURCES: [MessageCreationSource; 4] = [
+const SOURCES: [MessageCreationSource; 3] = [
     MessageCreationSource::Receive,
     MessageCreationSource::Assignment,
     MessageCreationSource::Transformation,
-    MessageCreationSource::SendPreparation,
 ];
 const PRIORITIES: [MessagePriority; 5] = [
     MessagePriority::Immediate,
@@ -391,8 +389,8 @@ mod tests {
             );
         }
         assert_eq!(
-            MessageCreationSource::SendPreparation.word(),
-            "SendPreparation"
+            MessageCreationSource::Transformation.word(),
+            "Transformation"
         );
         assert_eq!(MessagePriority::worded("immediate"), None);
     }
