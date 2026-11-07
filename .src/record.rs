@@ -125,10 +125,7 @@ impl Delimited {
     /// and with its doubled quotes made single, any other field as it is.
     #[must_use]
     pub fn unquote(&self, field: &[u8]) -> Vec<u8> {
-        let Some(inner) = field
-            .strip_prefix(&[self.quote])
-            .and_then(|rest| rest.strip_suffix(&[self.quote]))
-        else {
+        let Some(inner) = field.strip_circumfix(&[self.quote], &[self.quote]) else {
             return field.to_vec();
         };
         let mut text = Vec::with_capacity(inner.len());
