@@ -116,6 +116,7 @@ impl Delimited {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     #[test]
     fn a_piece_ends_on_the_last_line_break_outside_quotes() {
@@ -133,7 +134,7 @@ mod tests {
         let walked: Result<(), Walked<()>> =
             csv.read_records(&mut &text[..], 5, |bytes, record| {
                 let note = csv.unquote(record.field(bytes, 1).unwrap_or_default());
-                seen.push((record.number, String::from_utf8_lossy(&note).into_owned()));
+                seen.push((record.number, String::from_utf8_lossy_owned(note)));
                 Ok(())
             });
         assert!(walked.is_ok(), "{walked:?}");
@@ -152,11 +153,9 @@ mod tests {
     fn a_stop_names_its_byte_in_the_whole_stream() {
         let csv = Delimited::default();
         let walked = csv.read_records(&mut &b"a,b\nc,\"d\"x\n"[..], 4, |_, _| Ok::<(), ()>(()));
-        assert!(
-            matches!(
-                walked,
-                Err(Walked::Stopped("content after a closing quote", 9))
-            ),
+        assert_matches!(
+            walked,
+            Err(Walked::Stopped("content after a closing quote", 9)),
             "{walked:?}"
         );
     }
