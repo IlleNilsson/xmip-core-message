@@ -27,7 +27,7 @@ pub mod scan;
 pub mod segment;
 mod shape;
 
-pub use shape::{Part, Shape, ShapeError, Shaped, Stop, choose, media_type_of};
+pub use shape::{Part, Shape, ShapeError, Shaped, Stop, choose, loaded, media_type_of};
 
 use context::MessageContext;
 use serde::{Deserialize, Serialize};

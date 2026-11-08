@@ -39,14 +39,28 @@ impl Part {
 
     /// The whole content as one nameless part with the media type it came
     /// with: what `binary` and `text` answer, and the fallback for the rest.
-    #[must_use]
-    pub fn whole(stream: &Stream) -> Self {
-        Self::new(
+    ///
+    /// # Errors
+    /// The content could not be read, as `technology` reports it.
+    pub fn whole(technology: &str, stream: &Stream) -> Result<Self, ShapeError> {
+        Ok(Self::new(
             None,
-            stream.bytes(),
+            loaded(technology, stream)?,
             stream.media_type().map(str::to_string),
-        )
+        ))
     }
+}
+
+/// The content whole, as [`Stream::load`] reads it, for a shape that reads it
+/// whole: content that could not be read is `technology`'s error, never
+/// empty content.
+///
+/// # Errors
+/// The content could not be read; the reason is what the read met.
+pub fn loaded<'a>(technology: &str, stream: &'a Stream) -> Result<&'a [u8], ShapeError> {
+    stream
+        .load()
+        .map_err(|unread| ShapeError::unread(technology, &unread))
 }
 
 /// What a shape made of a Stream.
@@ -113,6 +127,13 @@ impl ShapeError {
     pub fn refused(technology: impl Into<String>, (reason, at): Stop) -> Self {
         Self::new(technology, reason).at(at)
     }
+
+    /// The error `technology` reports content that could not be read as:
+    /// what the read met, at no byte, since nothing was read to have one.
+    #[must_use]
+    pub fn unread(technology: impl Into<String>, unread: &stream::Unread) -> Self {
+        Self::new(technology, unread.to_string())
+    }
 }
 
 impl std::fmt::Display for ShapeError {
@@ -139,22 +160,26 @@ pub fn media_type_of(stream: &Stream) -> Option<String> {
 
 /// The shape for a Stream: the one that claims its media type, else the first
 /// that recognizes the bytes, in the order given. `None` when nothing does,
-/// which a caller resolves with `binary` if it has one.
-#[must_use]
-pub fn choose<'a>(shapes: &[&'a dyn Shape], stream: &Stream) -> Option<&'a dyn Shape> {
+/// which a caller resolves with `binary` if it has one. The content is read
+/// only where no media type chooses.
+///
+/// # Errors
+/// The content had to be read to recognize it and could not be.
+pub fn choose<'a>(
+    shapes: &[&'a dyn Shape],
+    stream: &Stream,
+) -> Result<Option<&'a dyn Shape>, stream::Unread> {
     if let Some(media) = media_type_of(stream) {
         let claimed = shapes
             .iter()
             .find(|shape| shape.media_types().contains(&media.as_str()));
         if let Some(shape) = claimed {
-            return Some(*shape);
+            return Ok(Some(*shape));
         }
     }
 
-    shapes
-        .iter()
-        .find(|shape| shape.recognizes(stream.bytes()))
-        .copied()
+    let bytes = stream.load()?;
+    Ok(shapes.iter().find(|shape| shape.recognizes(bytes)).copied())
 }
 
 #[cfg(test)]
@@ -181,8 +206,7 @@ mod tests {
             if stream.is_empty() {
                 return Err(ShapeError::new("lines", "no lines at all").at(0));
             }
-            let parts = stream
-                .bytes()
+            let parts = loaded("lines", stream)?
                 .split(|byte| *byte == b'\n')
                 .enumerate()
                 .map(|(n, line)| Part::new(Some(n.to_string()), line, None))
@@ -211,7 +235,7 @@ mod tests {
 
         fn shape(&self, stream: &Stream) -> Result<Shaped, ShapeError> {
             Ok(Shaped {
-                parts: vec![Part::whole(stream)],
+                parts: vec![Part::whole("binary", stream)?],
                 message_type: None,
             })
         }
@@ -224,16 +248,17 @@ mod tests {
     #[test]
     fn a_media_type_chooses_first_and_recognition_second_in_order() {
         let shapes: [&dyn Shape; 2] = [&Lines, &Whole];
-        let by_media = choose(&shapes, &stream(b"x", Some("Text/Lines; charset=utf-8")));
+        let by_media = choose(&shapes, &stream(b"x", Some("Text/Lines; charset=utf-8")))
+            .expect("chosen by its media type, nothing read");
         assert_eq!(by_media.map(Shape::technology), Some("lines"));
 
-        let by_look = choose(&shapes, &stream(b"a\nb", None));
+        let by_look = choose(&shapes, &stream(b"a\nb", None)).expect("held");
         assert_eq!(by_look.map(Shape::technology), Some("lines"));
 
-        let fallback = choose(&shapes, &stream(b"ab", Some("image/png")));
+        let fallback = choose(&shapes, &stream(b"ab", Some("image/png"))).expect("held");
         assert_eq!(fallback.map(Shape::technology), Some("binary"));
 
-        let nothing = choose(&[&Lines], &stream(b"ab", None));
+        let nothing = choose(&[&Lines], &stream(b"ab", None)).expect("held");
         assert!(nothing.is_none());
     }
 
@@ -260,7 +285,7 @@ mod tests {
     #[test]
     fn the_whole_part_keeps_the_media_type_and_parameters_are_dropped_for_choosing() {
         let source = stream(b"\x00\x01", Some("application/octet-stream; x=1"));
-        let whole = Part::whole(&source);
+        let whole = Part::whole("binary", &source).expect("held");
         assert_eq!(
             whole.media_type.as_deref(),
             Some("application/octet-stream; x=1")
@@ -270,5 +295,29 @@ mod tests {
             Some("application/octet-stream")
         );
         assert_eq!(media_type_of(&stream(b"", Some(" ; "))), None);
+    }
+
+    /// Kept content that cannot be reached.
+    struct Gone;
+
+    impl stream::Content for Gone {
+        fn reader(&self) -> std::io::Result<Box<dyn std::io::Read + Send + '_>> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no chunk",
+            ))
+        }
+    }
+
+    #[test]
+    fn content_that_cannot_be_read_is_the_shapes_error_never_empty() {
+        let gone = Stream::kept(StreamId::new(8), 4, None, std::sync::Arc::new(Gone));
+        let refused = Part::whole("binary", &gone).expect_err("not read");
+        assert_eq!(refused.technology, "binary");
+        assert!(refused.reason.contains("no chunk"), "{refused}");
+        let Err(unread) = choose(&[&Lines, &Whole], &gone) else {
+            panic!("recognition reads, and could not");
+        };
+        assert_eq!(unread.kind(), std::io::ErrorKind::NotFound);
     }
 }
