@@ -20,9 +20,6 @@ use std::ops::Range;
 /// The largest field number the format allows.
 const LARGEST_FIELD: u64 = (1 << 29) - 1;
 
-/// Groups nested deeper than this are refused rather than the stack.
-const DEEPEST: usize = 64;
-
 /// How a field's value is carried, named as the specification names them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WireType {
@@ -291,11 +288,12 @@ impl<'a> Reader<'a> {
     }
 
     /// A group's fields, to the end tag that carries its number; the value
-    /// is the bytes between the two tags.
+    /// is the bytes between the two tags. A group `depth` groups down is
+    /// level `depth + 1`, read to [`codec::depth::MAX_DEPTH`] and refused
+    /// past it rather than the stack.
     fn group(&mut self, open: Tag, depth: usize) -> Result<Range<usize>, Stop> {
-        if depth >= DEEPEST {
-            return Err(("groups nested too deep", open.at));
-        }
+        codec::depth::within(depth + 1, "a Protocol Buffers group")
+            .map_err(|_| ("groups nest past the levels Xmip reads", open.at))?;
         let start = self.at;
         while self.at < self.end {
             match self.any_tag()? {
@@ -369,10 +367,16 @@ mod tests {
         assert_eq!(fields[1].number, 3);
         assert_eq!(fields[1].value, 9..10);
 
-        let deep: Vec<u8> = std::iter::repeat_n(0x0b, DEEPEST + 1).collect();
+        // Groups of field 1, nested `levels` deep, each closed.
+        let nested = |levels: usize| [vec![0x0b; levels], vec![0x0c; levels]].concat();
+        let most = codec::depth::MAX_DEPTH;
+        assert!(
+            super::fields(&nested(most), 0..2 * most).is_ok(),
+            "the last level"
+        );
         assert_eq!(
-            super::fields(&deep, 0..deep.len()),
-            Err(("groups nested too deep", DEEPEST))
+            super::fields(&nested(most + 1), 0..2 * (most + 1)),
+            Err(("groups nest past the levels Xmip reads", most))
         );
         assert_eq!(
             super::fields(b"\x0b\x08\x01", 0..3),
