@@ -38,4 +38,4 @@ and routing alone creates no new Message.
 `doc/terminology.md`, *Message and Section*, and
 `doc/architecture/runtime-model.md` sections 2 and 3 govern it; each
 representation is a technology mounted under this repository, and
-`architecture.xmip` names them.
+`architecture.toml` names them.
