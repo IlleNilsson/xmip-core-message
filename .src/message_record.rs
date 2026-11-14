@@ -26,15 +26,22 @@
 //! IEEE 754 bits, text and bytes counted.
 //!
 //! One form, here, with the type it writes: Xmip Storage keeps the body as
-//! it is given, byte for byte, and nothing else writes a Message's.
+//! it is given, byte for byte, and nothing else writes a Message's. What
+//! the bytes hold is [`Recorded`], a [`Form`] (`xmip-core-library-codec`'s
+//! one binary form): the Message with each Stream named, not kept, because
+//! only the reader knows where a Stream is kept. [`Message::record`] puts
+//! the form's number before it (`codec::form::numbered`), and
+//! [`Message::from_record`] keeps each Stream where its caller says.
 
 use codec::CodecError;
 use codec::cursor::Cursor;
 use codec::field::{
     counted, many, optional, place, placed, read_counted, read_many, read_optional, read_text, text,
 };
+use codec::form::{Form, from_numbered, numbered};
 use codec::writer::ByteWriter;
 use context::MessageContext;
+use std::borrow::Cow;
 use std::sync::Arc;
 use stream::{Content, Stream};
 use xcore::{MessageId, ScalarValue, SectionId, StreamId};
@@ -124,32 +131,13 @@ const DURABILITIES: [MessageDurability; 3] = [
 ];
 
 impl Message {
-    /// The Message in its one binary form: everything but its Sections'
-    /// content, which each Section names by its Stream's identifier.
+    /// The Message in its one binary form, after the form's number:
+    /// everything but its Sections' content, which each Section names by
+    /// its Stream's identifier.
     #[must_use]
     pub fn record(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(128 + 48 * self.context.iter().count());
-        out.byte(FORM).u128_be(self.message_id.value());
-        optional(&mut out, self.previous_message_id, |out, id| {
-            out.u128_be(id.value());
-        });
-        out.varint(u64::from(self.generation));
-        out.byte(place(&SOURCES, &self.created_by))
-            .byte(place(&PRIORITIES, &self.treatment.priority))
-            .byte(place(&PROFILES, &self.treatment.execution_profile))
-            .byte(place(&DURABILITIES, &self.treatment.durability));
-        many(&mut out, &self.sections, |out, section| {
-            out.u128_be(section.section_id.value());
-            optional(out, section.name.as_deref(), text);
-            out.u128_be(section.stream.id().value());
-            optional(out, section.stream.media_type(), text);
-            optional(out, section.contract.as_deref(), text);
-        });
-        let context: Vec<(&str, &ScalarValue)> = self.context.iter().collect();
-        many(&mut out, &context, |out, (name, value)| {
-            text(out, name);
-            scalar(out, value);
-        });
+        numbered(&mut out, FORM, &Recorded::of(self));
         out
     }
 
@@ -170,15 +158,102 @@ impl Message {
         bytes: &[u8],
         mut content: impl FnMut(StreamId) -> Result<(u64, Arc<dyn Content>), CodecError>,
     ) -> Result<Self, CodecError> {
-        let mut cursor = Cursor::new(bytes);
-        let form = cursor.byte()?;
-        if form != FORM {
-            return Err(CodecError::new(format!(
-                "a Message record of form {form}, and this reads form {FORM}"
-            )));
+        let recorded: Recorded<'_> = from_numbered(bytes, FORM, "a Message record")?;
+        let sections = recorded
+            .sections
+            .into_iter()
+            .map(|section| {
+                let (length, kept) = content(section.stream)?;
+                let media_type = section.media_type.map(Cow::into_owned);
+                Ok(MessageSection {
+                    section_id: section.section_id,
+                    name: section.name.map(Cow::into_owned),
+                    stream: Stream::kept(section.stream, length, media_type, kept),
+                    contract: section.contract.map(Cow::into_owned),
+                })
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
+        Ok(Self {
+            message_id: recorded.message_id,
+            previous_message_id: recorded.previous_message_id,
+            generation: recorded.generation,
+            created_by: recorded.created_by,
+            treatment: recorded.treatment,
+            sections: Arc::from(sections),
+            context: recorded.context,
+        })
+    }
+}
+
+/// A Message as its record holds it: everything but its Sections' content,
+/// each Section's Stream named by its identifier and its media type. It
+/// borrows from the Message it is written from; one read is owned until
+/// [`Message::from_record`] keeps each Stream where its caller says.
+struct Recorded<'a> {
+    message_id: MessageId,
+    previous_message_id: Option<MessageId>,
+    generation: u32,
+    created_by: MessageCreationSource,
+    treatment: MessageTreatment,
+    sections: Vec<RecordedSection<'a>>,
+    context: Arc<MessageContext>,
+}
+
+/// A Section as its Message's record holds it: its Stream by identifier.
+struct RecordedSection<'a> {
+    section_id: SectionId,
+    name: Option<Cow<'a, str>>,
+    stream: StreamId,
+    media_type: Option<Cow<'a, str>>,
+    contract: Option<Cow<'a, str>>,
+}
+
+impl<'a> Recorded<'a> {
+    fn of(message: &'a Message) -> Self {
+        Self {
+            message_id: message.message_id,
+            previous_message_id: message.previous_message_id,
+            generation: message.generation,
+            created_by: message.created_by,
+            treatment: message.treatment,
+            sections: message
+                .sections
+                .iter()
+                .map(|section| RecordedSection {
+                    section_id: section.section_id,
+                    name: section.name.as_deref().map(Cow::Borrowed),
+                    stream: section.stream.id(),
+                    media_type: section.stream.media_type().map(Cow::Borrowed),
+                    contract: section.contract.as_deref().map(Cow::Borrowed),
+                })
+                .collect(),
+            context: Arc::clone(&message.context),
         }
+    }
+}
+
+impl Form for Recorded<'_> {
+    fn write(&self, out: &mut Vec<u8>) {
+        out.u128_be(self.message_id.value());
+        optional(out, self.previous_message_id, |out, id| {
+            out.u128_be(id.value());
+        });
+        out.varint(u64::from(self.generation));
+        out.byte(place(&SOURCES, &self.created_by))
+            .byte(place(&PRIORITIES, &self.treatment.priority))
+            .byte(place(&PROFILES, &self.treatment.execution_profile))
+            .byte(place(&DURABILITIES, &self.treatment.durability));
+        many(out, &self.sections, |out, section| section.write(out));
+        let context: Vec<(&str, &ScalarValue)> = self.context.iter().collect();
+        many(out, &context, |out, (name, value)| {
+            text(out, name);
+            scalar(out, value);
+        });
+    }
+
+    fn read(cursor: &mut Cursor<'_>) -> codec::Result<Self> {
         let message_id = MessageId::new(cursor.u128_be()?);
-        let previous_message_id = read_optional(&mut cursor, |c| Ok(MessageId::new(c.u128_be()?)))?;
+        let previous_message_id = read_optional(cursor, |c| Ok(MessageId::new(c.u128_be()?)))?;
         let generation = u32::try_from(cursor.varint()?)
             .map_err(|_| CodecError::new("a Message's generation past u32"))?;
         let created_by = placed(&SOURCES, cursor.byte()?, "Message creation source")?;
@@ -187,38 +262,40 @@ impl Message {
             execution_profile: placed(&PROFILES, cursor.byte()?, "execution profile")?,
             durability: placed(&DURABILITIES, cursor.byte()?, "Message durability")?,
         };
-        let sections = read_many(&mut cursor, |c| {
-            let section_id = SectionId::new(c.u128_be()?);
-            let name = read_optional(c, read_text)?;
-            let stream = StreamId::new(c.u128_be()?);
-            let media_type = read_optional(c, read_text)?;
-            let contract = read_optional(c, read_text)?;
-            Ok(MessageSection {
-                section_id,
-                name,
-                stream: {
-                    let (length, kept) = content(stream)?;
-                    Stream::kept(stream, length, media_type, kept)
-                },
-                contract,
-            })
-        })?;
-        let context = read_many(&mut cursor, |c| Ok((read_text(c)?, read_scalar(c)?)))?
+        let sections = read_many(cursor, RecordedSection::read)?;
+        let context = read_many(cursor, |c| Ok((read_text(c)?, read_scalar(c)?)))?
             .into_iter()
             .fold(MessageContext::new(), |context, (name, value)| {
                 context.with_value(name, value)
             });
-        if !cursor.is_empty() {
-            return Err(CodecError::new("bytes after the Message record"));
-        }
         Ok(Self {
             message_id,
             previous_message_id,
             generation,
             created_by,
             treatment,
-            sections: Arc::from(sections),
+            sections,
             context: Arc::new(context),
+        })
+    }
+}
+
+impl Form for RecordedSection<'_> {
+    fn write(&self, out: &mut Vec<u8>) {
+        out.u128_be(self.section_id.value());
+        optional(out, self.name.as_deref(), text);
+        out.u128_be(self.stream.value());
+        optional(out, self.media_type.as_deref(), text);
+        optional(out, self.contract.as_deref(), text);
+    }
+
+    fn read(cursor: &mut Cursor<'_>) -> codec::Result<Self> {
+        Ok(Self {
+            section_id: SectionId::new(cursor.u128_be()?),
+            name: read_optional(cursor, read_text)?.map(Cow::Owned),
+            stream: StreamId::new(cursor.u128_be()?),
+            media_type: read_optional(cursor, read_text)?.map(Cow::Owned),
+            contract: read_optional(cursor, read_text)?.map(Cow::Owned),
         })
     }
 }
@@ -313,6 +390,37 @@ mod tests {
     fn ledger(stream: StreamId) -> Result<(u64, Arc<dyn Content>), CodecError> {
         assert_eq!(stream, StreamId::new(3));
         Ok((8, Arc::new(Kept(b"<Order/>"))))
+    }
+
+    /// The bytes `received()` and its assigned copy are written as, taken
+    /// from the encoder that wrote them before the form was a `Form`
+    /// (2026-11-13): the form may not change.
+    const RECEIVED: &str = concat!(
+        "02000000000000000000000000000000010000000402010100000000000000000000000000000002",
+        "0104626f647900000000000000000000000000000003010f6170706c69636174696f6e2f786d6c01",
+        "16786d69702d636f72652d636f6e74726163742d786d6c0606416d6f756e7402fffffffffffffb50",
+        "074e6f7468696e67000452617465033fd000000000000003526177050200ff18786d69702e747261",
+        "6e73706f72742e6d656368616e69736d040c63697263756d7374616e636515786d69702e7472616e",
+        "73706f72742e70726f76656e0100",
+    );
+    const ASSIGNED: &str = concat!(
+        "02000000000000000000000000000000040100000000000000000000000000000001010104020101",
+        "000000000000000000000000000000020104626f647900000000000000000000000000000003010f",
+        "6170706c69636174696f6e2f786d6c0116786d69702d636f72652d636f6e74726163742d786d6c06",
+        "06416d6f756e7402fffffffffffffb50074e6f7468696e67000452617465033fd000000000000003",
+        "526177050200ff18786d69702e7472616e73706f72742e6d656368616e69736d040c63697263756d",
+        "7374616e636515786d69702e7472616e73706f72742e70726f76656e0100",
+    );
+
+    #[test]
+    fn a_message_is_written_byte_for_byte_as_its_form_was() {
+        let first = received();
+        let assigned = first.assigned(MessageId::new(4), context());
+        for (message, golden) in [(first, RECEIVED), (assigned, ASSIGNED)] {
+            assert_eq!(codec::hex::encode(&message.record()), golden);
+            let bytes = codec::hex::decode(golden).expect("hex");
+            assert_eq!(Message::from_record(&bytes, ledger).expect("read"), message);
+        }
     }
 
     #[test]

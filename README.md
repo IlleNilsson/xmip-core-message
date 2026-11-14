@@ -23,10 +23,15 @@ A Message's one binary form, what the Ledger keeps as the body of Xmip
 Storage's Message record, is here with the type (`message_record`):
 `Message::record` writes it — the form's number, the identifiers, lineage,
 treatment and Context in their order, and each Section's Stream by its
-identifier, length and media type, never its bytes, which the Ledger keeps
-in chunks — and `Message::from_record` reads it back, each Stream kept
-(`Stream::kept`) where its caller reads it from, never whole. Binary, not JSON: the estate keeps no JSON at rest
-(ADR-0031 clause 3), and the record is written for every Message.
+identifier and media type, never its bytes, which the Ledger keeps in
+chunks, nor its length, which the Stream's own record keeps — and
+`Message::from_record` reads it back, each Stream kept (`Stream::kept`)
+where its caller reads it from, never whole. What the bytes hold is a
+`codec::form::Form`, `xmip-core-library-codec`'s one binary form: the
+Message with each Stream named, which only its reader can keep, and a test
+holds the bytes written to the ones the form has always written. Binary,
+not JSON: the estate keeps no JSON at rest (ADR-0031 clause 3), and the
+record is written for every Message.
 
 The Stream is immutable and the Message is not: context, promoted properties
 and execution history accumulate as it is handled, while the content it refers
