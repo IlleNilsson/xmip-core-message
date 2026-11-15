@@ -19,6 +19,20 @@ The scanning shapes — JSON, XML, an Avro schema — walk `codec::cursor::Curso
 the estate's one byte cursor; what they share over it is here in `scan`: a
 quoted string as JSON writes one, and where a varint lies in the bytes.
 
+The segment syntaxes are walked here once (`segment`): a UN/EDIFACT, ASC X12
+or TRADACOMS interchange and an HL7 v2 message in ER7, each a run of
+segments ended by a terminator, a release character making the next byte
+literal where the syntax has one. Each syntax hands the walk only what
+differs — its `Delimiters`: the terminator, the element and component
+separators, the release character, whether every line break ends a segment
+(ER7) and whether the last may end with the text (the HL7 v2 contract). The
+walk yields a segment at a time, its tag read at once and its pieces cut only
+when asked, and stops where the text is malformed, with the reason and the
+byte. The `edi-edifact`, `edi-x12`, `edi-tradacoms` and `hl7-er7` shapes
+section by it, and the EDIFACT, X12 and HL7 v2 contracts read by it, so the
+`edi` and `hl7-v2` paths answer from one segment and never build a tree.
+The terminator is found eight bytes at a time.
+
 A Message's one binary form, what the Ledger keeps as the body of Xmip
 Storage's Message record, is here with the type (`message_record`):
 `Message::record` writes it — the form's number, the identifiers, lineage,
