@@ -1,6 +1,3 @@
-# Its own workspace root, so this repository builds on its own.
-[workspace]
-
 [package]
 name = "xmip-core-message"
 version = "0.1.0"
@@ -25,6 +22,3 @@ context = { package = "xmip-core-context", git = "https://github.com/IlleNilsson
 # written in, and the Message's one binary form (`message_record`), a
 # `codec::form::Form`.
 codec = { package = "xmip-core-library-codec", git = "https://github.com/IlleNilsson/xmip-core-library-codec", branch = "main" }
-
-[profile.dev.package."*"]
-opt-level = 3
